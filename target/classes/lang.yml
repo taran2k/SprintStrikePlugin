@@ -1,0 +1,3 @@
+ErrorMobInAir: "The mob is in the air and cannot be reached!"
+ErrorNoSpace: "No safe location to teleport to near the mob!"
+ErrorCooldown: "You can use the sprint strike ability again in {X} seconds"
