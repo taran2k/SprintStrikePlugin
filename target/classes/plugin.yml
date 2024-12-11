@@ -1,0 +1,32 @@
+name: SprintStrike
+version: 1.0.0
+main: com.github.taran2k.sprintstrike.SprintStrikePlugin
+description: A simple, tier-based customizable plugin for sneaking up on mobs by teleporting to them from a close distance and additionally applying effects to the player after teleportation.
+author: taran2k
+website: https://github.com/taran2k/SprintStrikePlugin
+api-version: '1.21.4'
+load: STARTUP
+
+commands:
+  sprintstrike:
+    description: "Manage sprint strike tiers for players."
+    usage: "/sprintstrike settier LEVEL [PLAYER]"
+    permission: canSetSprintStrikeLevel
+    permission-message: "You do not have permission to execute this command."
+
+permissions:
+  canSetSprintStrikeLevel:
+    description: "Allows setting the sprint strike level."
+    default: op
+  canSprintStrikeFiveBlocks:
+    description: "Allows sprint striking within 5 blocks."
+    default: op
+  canSprintStrikeTenBlocks:
+    description: "Allows sprint striking within 10 blocks."
+    default: op
+  canSprintStrikeFifteenBlocks:
+    description: "Allows sprint striking within 15 blocks."
+    default: op
+  canSprintStrikeTwentyBlocks:
+    description: "Allows sprint striking within 20 blocks."
+    default: op

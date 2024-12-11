@@ -30,9 +30,6 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
 
     @Override
     public void onEnable() {
-        // Register permissions
-        Bukkit.getPluginManager().addPermission(new org.bukkit.permissions.Permission("canSetSprintStrikeLevel"));
-
         // Register events
         Bukkit.getPluginManager().registerEvents(this, this);
 
