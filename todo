@@ -1,0 +1,5 @@
+- [ ] prevent sprintStrike from working on leashed or nametagged mobs
+- [ ] fix teleportation not working with certain mobs such as horses and spiders
+- [ ] change message layout/colouring
+- [ ] make combo times configurable within tiers.yml
+- [ ] add a 'clearEffectsAfterComboOver' property to config.yml

@@ -3,6 +3,7 @@ package com.github.taran2k.sprintstrike;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.Sound;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Animals;
@@ -11,11 +12,17 @@ import org.bukkit.entity.Monster;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.player.PlayerToggleSneakEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.util.Vector;
+import org.bukkit.Particle;
+import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.scheduler.BukkitTask;
+
+import net.md_5.bungee.api.ChatColor;
 
 import java.io.File;
 import java.io.IOException;
@@ -31,6 +38,8 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
 
     private final Map<UUID, Integer> playerTiers = new HashMap<>();
     private final Map<UUID, Long> cooldowns = new HashMap<>();
+    private final Map<UUID, Long> comboCountdowns = new HashMap<>();
+    private final Map<UUID, Integer> comboTasks = new HashMap<>();
 
     @Override
     public void onEnable() {
@@ -53,12 +62,12 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
         // Register commands
         this.getCommand("sprintstrike").setExecutor((sender, command, label, args) -> {
             if (args.length < 2 || !(sender instanceof Player)) {
-                sender.sendMessage("Usage: /sprintstrike settier LEVEL [PLAYER]");
+                sender.sendMessage(formatMessage("CommandUsage"));
                 return true;
             }
 
             if (!sender.hasPermission("canSetSprintStrikeLevel")) {
-                sender.sendMessage("You don't have permission to use this command.");
+                sender.sendMessage(formatMessage("NoPermission"));
                 return true;
             }
 
@@ -67,23 +76,25 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
                 Player target = args.length > 2 ? Bukkit.getPlayer(args[2]) : (Player) sender;
 
                 if (level < 1) {
-                    sender.sendMessage("Level must be greater than 0.");
+                    sender.sendMessage(formatMessage("LevelTooLow"));
                     return true;
                 }
 
                 if (level > tiers.getKeys(false).size()) {
-                    sender.sendMessage("There is no such tier!");
+                    sender.sendMessage(formatMessage("NoSuchTier"));
                     return true;
                 }
 
                 if (target != null) {
                     setPlayerTier(target.getUniqueId(), level);
-                    sender.sendMessage("Set sprint strike tier to " + level + " for " + target.getName() + ".");
+                    sender.sendMessage(formatMessage("TierSet", 
+                        "{LEVEL}", String.valueOf(level), 
+                        "{PLAYER}", target.getName()));
                 } else {
-                    sender.sendMessage("Player not found.");
+                    sender.sendMessage(formatMessage("PlayerNotFound"));
                 }
             } catch (NumberFormatException e) {
-                sender.sendMessage("Level must be a number.");
+                sender.sendMessage(formatMessage("LevelNotNumber"));
             }
             return true;
         });
@@ -97,12 +108,9 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
         UUID playerId = player.getUniqueId();
         int tier = playerTiers.getOrDefault(playerId, 0);
 
-        // Check cooldown
-        long currentTime = System.currentTimeMillis();
-        long cooldown = getTierCooldown(tier) * 1000L;
-        if (cooldowns.containsKey(playerId) && (currentTime - cooldowns.get(playerId)) < cooldown) {
-            long remainingTime = (cooldown - (currentTime - cooldowns.get(playerId))) / 1000;
-            sendMessage(player, "ErrorCooldown", remainingTime);
+        // Check if player is holding correct weapon
+        Material handItem = player.getInventory().getItemInMainHand().getType();
+        if (!isValidWeapon(handItem)) {
             return;
         }
 
@@ -111,14 +119,147 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
         double distance = player.getLocation().distance(target.getLocation());
 
         List<String> permissions = getTierPermissions(tier);
+        boolean hasComboPermission = permissions.contains("canTeleportCombo");
+
+        // Check cooldown or combo countdown
+        long currentTime = System.currentTimeMillis();
+        
+        if (hasComboPermission) {
+            // Handle combo countdown
+            if (handleComboCountdown(player)) {
+                if (sprintStrike(player, target, tier)) {
+                    // Reset combo countdown
+                    startComboCountdown(player);
+                }
+                return;
+            }
+        }
+        
+        // Original cooldown logic for non-combo tiers
+        long cooldown = getTierCooldown(tier) * 1000L;
+        if (cooldowns.containsKey(playerId) && (currentTime - cooldowns.get(playerId)) < cooldown) {
+            long remainingTime = (cooldown - (currentTime - cooldowns.get(playerId))) / 1000;
+            sendMessage(player, "ErrorCooldown", remainingTime);
+            
+            // Play sound when cooldown is active
+            player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 1.0f, 0.5f);
+            
+            return;
+        }
+
         if ((distance <= 5 && permissions.contains("canSprintStrikeFiveBlocks")) ||
             (distance <= 10 && permissions.contains("canSprintStrikeTenBlocks")) ||
             (distance <= 15 && permissions.contains("canSprintStrikeFifteenBlocks")) ||
             (distance <= 20 && permissions.contains("canSprintStrikeTwentyBlocks"))) {
+            
             if (sprintStrike(player, target, tier)) {
-                cooldowns.put(playerId, currentTime); // Set cooldown only if sprintStrike was succesful
-            };
+                if (!hasComboPermission) {
+                    cooldowns.put(playerId, currentTime);
+                } else {
+                    startComboCountdown(player);
+                }
+            }
         }
+    }
+
+    @EventHandler
+    public void onEntityDamage(EntityDamageEvent event) {
+        // Interrupt combo on player damage
+        if (event.getEntity() instanceof Player) {
+            Player player = (Player) event.getEntity();
+            UUID playerId = player.getUniqueId();
+
+            if (comboCountdowns.containsKey(playerId)) {
+                cancelComboCountdown(player);
+                sendMessage(player, "ComboInterrupted");
+            }
+        }
+    }
+
+    private boolean handleComboCountdown(Player player) {
+        UUID playerId = player.getUniqueId();
+        Long comboStart = comboCountdowns.get(playerId);
+
+        if (comboStart == null) {
+            return false;
+        }
+
+        long currentTime = System.currentTimeMillis();
+        long elapsedTime = currentTime - comboStart;
+
+        if (elapsedTime > 5000) {
+            // Combo expired
+            cancelComboCountdown(player);
+            sendMessage(player, "ComboExpired");
+            return false;
+        }
+
+        return true;
+    }
+
+    private void startComboCountdown(Player player) {
+        UUID playerId = player.getUniqueId();
+        
+        // Cancel any existing countdown task
+        cancelComboCountdown(player);
+
+        // Set the combo start time
+        comboCountdowns.put(playerId, System.currentTimeMillis());
+
+        // Start a new countdown task
+        BukkitTask taskId = new BukkitRunnable() {
+            @Override
+            public void run() {
+                if (!player.isOnline()) {
+                    cancel();
+                    return;
+                }
+
+                long currentTime = System.currentTimeMillis();
+                long comboStart = comboCountdowns.get(playerId);
+                long remainingTime = 5000 - (currentTime - comboStart);
+
+                if (remainingTime <= 0) {
+                    cancelComboCountdown(player);
+                    sendMessage(player, "ComboExpired");
+                    cancel();
+                    return;
+                }
+
+                // Format the remaining time with seconds and milliseconds
+                long seconds = remainingTime / 1000;
+                long milliseconds = (remainingTime % 1000) / 10;
+                String countdownMessage = String.format("Combo: %d.%02d", seconds, milliseconds);
+
+                // Send the countdown to the hotbar
+                player.spigot().sendMessage(net.md_5.bungee.api.ChatMessageType.ACTION_BAR, 
+                    new net.md_5.bungee.api.chat.TextComponent(countdownMessage));
+            }
+        }.runTaskTimer(this, 0L, 1L); // Run every tick (1/20th of a second)
+
+        // Store the task ID
+        comboTasks.put(playerId, taskId.getTaskId());
+    }
+
+    private void cancelComboCountdown(Player player) {
+        UUID playerId = player.getUniqueId();
+        
+        // Remove combo start time
+        comboCountdowns.remove(playerId);
+
+        // Cancel the countdown task if it exists
+        Integer taskId = comboTasks.remove(playerId);
+        if (taskId != null) {
+            Bukkit.getScheduler().cancelTask(taskId);
+        }
+
+        cooldowns.put(playerId, System.currentTimeMillis());
+    }
+
+    private boolean isValidWeapon(Material material) {
+        return material.name().contains("SWORD") || // Hackish solution, but seems to be the least intensive one
+               material.name().contains("AXE") ||
+               material == Material.STICK;
     }
 
     private Entity getTargetEntity(Player player, int maxDistance) {
@@ -160,39 +301,87 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
     
         return closestEntity;
     }
-    
 
     private boolean sprintStrike(Player player, Entity target, int tier) {
         Location mobLocation = target.getLocation();
-
-        Location safeLocation = findSafeLocationNear(mobLocation, player);
-        if (safeLocation == null) {
+        Location playerLocation = findSafeLocationNextToEntity(mobLocation, player);
+        if (playerLocation == null) {
             sendMessage(player, "ErrorNoSpace");
             return false;
         }
-
-        player.teleport(safeLocation);
-        player.setRotation(mobLocation.getYaw(), mobLocation.getPitch());
-
+    
+        // Teleport player
+        player.teleport(playerLocation);
+    
+        // Calculate direction vector from player to mob
+        Vector directionVector = mobLocation.toVector().subtract(playerLocation.toVector()).normalize();
+    
+        // Calculate pitch (vertical angle)
+        double distanceXZ = Math.sqrt(directionVector.getX() * directionVector.getX() + directionVector.getZ() * directionVector.getZ());
+        double pitch = Math.toDegrees(Math.atan2(-directionVector.getY()+0.3, distanceXZ));
+    
+        // Calculate yaw (horizontal angle)
+        double yaw = Math.toDegrees(Math.atan2(-directionVector.getX(), directionVector.getZ()));
+    
+        // Set player's view
+        Location viewLocation = player.getLocation().clone();
+        viewLocation.setYaw((float) yaw);
+        viewLocation.setPitch((float) pitch);
+        player.teleport(viewLocation);
+    
+        // Play teleport sound
+        player.playSound(playerLocation, Sound.ENTITY_ENDERMAN_TELEPORT, 1.0f, 1.0f);
+    
+        // Spawn teleport particles
+        player.getWorld().spawnParticle(Particle.PORTAL, playerLocation, 50, 0.5, 1, 0.5, 0.5);
+    
         applyEffects(player, tier);
         return true;
     }
 
-    private Location findSafeLocationNear(Location mobLocation, Player player) {
-        for (int dx = -1; dx <= 1; dx++) {
-            for (int dz = -1; dz <= 1; dz++) {
-                Location potentialLocation = mobLocation.clone().add(dx, 0, dz);
-                while (potentialLocation.getBlockY() > 0 && potentialLocation.getBlock().getType() == Material.AIR) {
-                    potentialLocation.subtract(0, 1, 0);
-                }
-                potentialLocation.add(0, 1, 0);
+    private Location findSafeLocationNextToEntity(Location mobLocation, Player player) {
+        // Possible offset directions
+        int[][] offsets = {{1,0,0}, {-1,0,0}, {0,0,1}, {0,0,-1}, {0,1,0}}; // also checking for y+1 f.e. for mobs on slabs or spiders
 
-                if (potentialLocation.getBlock().getType() == Material.AIR && !player.getWorld().getNearbyEntities(potentialLocation, 0.5, 0.5, 0.5).isEmpty()) {
-                    return potentialLocation;
-                }
+        for (int[] offset : offsets) {
+            Location potentialLocation = mobLocation.clone().add(offset[0], offset[1], offset[2]);
+            
+            // Find safe y-level
+            while (potentialLocation.getBlockY() > 0 && potentialLocation.getBlock().getType() == Material.AIR) {
+                potentialLocation.subtract(0, 1, 0);
+            }
+            potentialLocation.add(0, 1, 0);
+
+            // Check if location is safe (air block, no entities)
+            if (potentialLocation.getBlock().getType() == Material.AIR && 
+                player.getWorld().getNearbyEntities(potentialLocation, 0.5, 0.5, 0.5).isEmpty()) {
+                return potentialLocation;
             }
         }
         return null;
+    }
+
+    private String formatMessage(String key, String... replacements) {
+        String message = lang.getString(key, "Error: message not found");
+        
+        for (int i = 0; i < replacements.length; i += 2) {
+            if (i + 1 < replacements.length) {
+                message = message.replace(replacements[i], 
+                    ChatColor.YELLOW + "" + ChatColor.BOLD + replacements[i + 1] + ChatColor.RESET);
+            }
+        }
+
+        return colorize(message);
+    }
+
+    private String colorize(String message) {
+        // Add color to different types of messages
+        if (message.contains("Error:")) {
+            return ChatColor.RED + message + ChatColor.RESET;
+        } else if (message.contains("seconds")) {
+            return message.replace("seconds", ChatColor.GOLD + "seconds" + ChatColor.RESET);
+        }
+        return ChatColor.GREEN + message + ChatColor.RESET;
     }
 
     private void sendMessage(Player player, String key) {
@@ -200,16 +389,13 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
     }
 
     private void sendMessage(Player player, String key, long remainingTime) {
-        String message = lang.getString(key, "Error: message not found");
-        if (remainingTime >= 0) {
-            message = message.replace("{X}", String.valueOf(remainingTime));
-        }
-
+        String message = formatMessage(key, "{X}", String.valueOf(remainingTime));
         String messageType = config.getString("messageType", "chat");
 
         switch (messageType.toLowerCase()) {
             case "hotbar":
-                player.spigot().sendMessage(net.md_5.bungee.api.ChatMessageType.ACTION_BAR, new net.md_5.bungee.api.chat.TextComponent(message));
+                player.spigot().sendMessage(net.md_5.bungee.api.ChatMessageType.ACTION_BAR, 
+                    new net.md_5.bungee.api.chat.TextComponent(message));
                 break;
             case "title":
                 player.sendTitle("", message, 10, 70, 20);
@@ -260,13 +446,25 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
 
     private void createLangFile() {
         File langFile = new File(getDataFolder(), "lang.yml");
-        if (!langFile.exists()) {
+        if (!langFile.exists()) { // Future issue: if a version update includes new messages, add them here without completely overriding custom lang files
             try {
                 langFile.createNewFile();
                 FileConfiguration langConfig = YamlConfiguration.loadConfiguration(langFile);
-                langConfig.set("ErrorMobInAir", "The mob is in the air and cannot be reached!");
+                
+                // Comprehensive language configuration with placeholders
                 langConfig.set("ErrorNoSpace", "No safe location to teleport to near the mob!");
                 langConfig.set("ErrorCooldown", "You can use the sprint strike ability again in {X} seconds");
+                langConfig.set("WrongWeapon", "You must hold a sword, axe, or stick to use Sprint Strike!");
+                langConfig.set("CommandUsage", "Usage: /sprintstrike settier LEVEL [PLAYER]");
+                langConfig.set("NoPermission", "You don't have permission to use this command.");
+                langConfig.set("LevelTooLow", "Level must be greater than 0.");
+                langConfig.set("NoSuchTier", "There is no such tier!");
+                langConfig.set("TierSet", "Set sprint strike tier to {LEVEL} for {PLAYER}.");
+                langConfig.set("PlayerNotFound", "Player not found.");
+                langConfig.set("LevelNotNumber", "Level must be a number.");
+                langConfig.set("ComboInterrupted", "Combo interrupted by damage!");
+                langConfig.set("ComboExpired", "Combo countdown expired!");
+                
                 langConfig.save(langFile);
             } catch (IOException e) {
                 getLogger().severe("Could not create lang.yml file.");
