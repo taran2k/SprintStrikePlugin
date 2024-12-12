@@ -18,15 +18,3 @@ permissions:
   canSetSprintStrikeLevel:
     description: "Allows setting the sprint strike level."
     default: op
-  canSprintStrikeFiveBlocks:
-    description: "Allows sprint striking within 5 blocks."
-    default: op
-  canSprintStrikeTenBlocks:
-    description: "Allows sprint striking within 10 blocks."
-    default: op
-  canSprintStrikeFifteenBlocks:
-    description: "Allows sprint striking within 15 blocks."
-    default: op
-  canSprintStrikeTwentyBlocks:
-    description: "Allows sprint striking within 20 blocks."
-    default: op
