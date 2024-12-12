@@ -224,7 +224,7 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
                 // Format the remaining time with seconds and milliseconds
                 long seconds = remainingTime / 1000;
                 long milliseconds = (remainingTime % 1000) / 10;
-                String countdownMessage = String.format("Combo: %d.%02d", seconds, milliseconds);
+                String countdownMessage = applyColorTags(String.format("<DARK_BLUE><BOLD>COMBO!<RESET><GREY> %d.%02d<RESET>", seconds, milliseconds));
 
                 // Send the countdown to the hotbar
                 player.spigot().sendMessage(net.md_5.bungee.api.ChatMessageType.ACTION_BAR, 
@@ -367,16 +367,52 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
             }
         }
 
+        // Apply color tags in the message (e.g., <BLUE>, <RED>, etc.)
+        message = applyColorTags(message);
+
         return colorize(message);
     }
-
+    
+    private String applyColorTags(String message) {
+        // Regular expression to match color tags in the form of <COLOR> anywhere in the message
+        String[] colorTags = {
+            "<BLUE>", ChatColor.BLUE.toString(),
+            "<RED>", ChatColor.RED.toString(),
+            "<YELLOW>", ChatColor.YELLOW.toString(),
+            "<GREEN>", ChatColor.GREEN.toString(),
+            "<AQUA>", ChatColor.AQUA.toString(),
+            "<WHITE>", ChatColor.WHITE.toString(),
+            "<BLACK>", ChatColor.BLACK.toString(),
+            "<GRAY>", ChatColor.GRAY.toString(),
+            "<GREY>", ChatColor.GRAY.toString(),
+            "<DARK_BLUE>", ChatColor.DARK_BLUE.toString(),
+            "<DARK_RED>", ChatColor.DARK_RED.toString(),
+            "<DARK_GREEN>", ChatColor.DARK_GREEN.toString(),
+            "<DARK_AQUA>", ChatColor.DARK_AQUA.toString(),
+            "<DARK_GRAY>", ChatColor.DARK_GRAY.toString(),
+            "<LIGHT_PURPLE>", ChatColor.LIGHT_PURPLE.toString(),
+            "<DARK_PURPLE>", ChatColor.DARK_PURPLE.toString(),
+            "<GOLD>", ChatColor.GOLD.toString(),
+            "<STRIKETHROUGH>", ChatColor.STRIKETHROUGH.toString(),
+            "<MAGIC>", ChatColor.MAGIC.toString(),
+            "<ITALIC>", ChatColor.ITALIC.toString(),
+            "<BOLD>", ChatColor.BOLD.toString(), 
+            "<RESET>", ChatColor.RESET.toString(),
+        };
+    
+        // Replace all occurrences of color tags in the message with the corresponding ChatColor codes
+        for (int i = 0; i < colorTags.length; i += 2) {
+            message = message.replaceAll(colorTags[i], colorTags[i + 1]);
+        }
+    
+        return message;
+    }
+    
     private String colorize(String message) {
-        // Add color to different types of messages
+        // Basic chat colorization
         if (message.contains("Error:")) {
             return ChatColor.RED + message + ChatColor.RESET;
-        } else if (message.contains("seconds")) {
-            return message.replace("seconds", ChatColor.GOLD + "seconds" + ChatColor.RESET);
-        }
+        } 
         return ChatColor.GREEN + message + ChatColor.RESET;
     }
 
@@ -459,13 +495,13 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
                 
                 // Comprehensive language configuration with placeholders
                 langConfig.set("ErrorNoSpace", "No safe location to teleport to near the mob!");
-                langConfig.set("ErrorCooldown", "You can use the sprint strike ability again in {X} seconds");
+                langConfig.set("ErrorCooldown", "<GREY>You can use the sprint strike ability again in <GOLD><BOLD>{X}<RESET><GOLD> seconds");
                 langConfig.set("WrongWeapon", "You must hold a sword, axe, or stick to use Sprint Strike!");
                 langConfig.set("CommandUsage", "Usage: /sprintstrike settier LEVEL [PLAYER]");
                 langConfig.set("NoPermission", "You don't have permission to use this command.");
                 langConfig.set("LevelTooLow", "Level must be greater than 0.");
                 langConfig.set("NoSuchTier", "There is no such tier!");
-                langConfig.set("TierSet", "Set sprint strike tier to {LEVEL} for {PLAYER}.");
+                langConfig.set("TierSet", "Set sprint strike tier to <YELLOW><BOLD>{LEVEL}<GREEN> for <YELLOW><BOLD>{PLAYER}<GREEN>.");
                 langConfig.set("PlayerNotFound", "Player not found.");
                 langConfig.set("LevelNotNumber", "Level must be a number.");
                 langConfig.set("ComboInterrupted", "Combo interrupted by damage!");
