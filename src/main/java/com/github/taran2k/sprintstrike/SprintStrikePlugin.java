@@ -118,18 +118,17 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
         if (target == null) return;
         double distance = player.getLocation().distance(target.getLocation());
 
-        List<String> permissions = getTierPermissions(tier);
-        boolean hasComboPermission = permissions.contains("canTeleportCombo");
+        boolean hasComboPermission = getTierComboDuration(tier) > 0;
 
         // Check cooldown or combo countdown
         long currentTime = System.currentTimeMillis();
         
         if (hasComboPermission) {
             // Handle combo countdown
-            if (handleComboCountdown(player)) {
+            if (handleComboCountdown(player, tier)) {
                 if (sprintStrike(player, target, tier)) {
                     // Reset combo countdown
-                    startComboCountdown(player);
+                    startComboCountdown(player, tier);
                 }
                 return;
             }
@@ -147,16 +146,12 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
             return;
         }
 
-        if ((distance <= 5 && permissions.contains("canSprintStrikeFiveBlocks")) ||
-            (distance <= 10 && permissions.contains("canSprintStrikeTenBlocks")) ||
-            (distance <= 15 && permissions.contains("canSprintStrikeFifteenBlocks")) ||
-            (distance <= 20 && permissions.contains("canSprintStrikeTwentyBlocks"))) {
-            
+        if (distance <= getTierMaxTeleportDistance(tier)) {
             if (sprintStrike(player, target, tier)) {
                 if (!hasComboPermission) {
                     cooldowns.put(playerId, currentTime);
                 } else {
-                    startComboCountdown(player);
+                    startComboCountdown(player, tier);
                 }
             }
         }
@@ -169,14 +164,14 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
             Player player = (Player) event.getEntity();
             UUID playerId = player.getUniqueId();
 
-            if (comboCountdowns.containsKey(playerId)) {
+            if (comboCountdowns.containsKey(playerId) && getTierDamageBreaksCombo(playerTiers.get(playerId))) {
                 cancelComboCountdown(player);
                 sendMessage(player, "ComboInterrupted");
             }
         }
     }
 
-    private boolean handleComboCountdown(Player player) {
+    private boolean handleComboCountdown(Player player, int tier) {
         UUID playerId = player.getUniqueId();
         Long comboStart = comboCountdowns.get(playerId);
 
@@ -187,7 +182,7 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
         long currentTime = System.currentTimeMillis();
         long elapsedTime = currentTime - comboStart;
 
-        if (elapsedTime > 5000) {
+        if (elapsedTime > getTierComboDuration(tier)*1000L) {
             // Combo expired
             cancelComboCountdown(player);
             sendMessage(player, "ComboExpired");
@@ -197,7 +192,7 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
         return true;
     }
 
-    private void startComboCountdown(Player player) {
+    private void startComboCountdown(Player player, int tier) {
         UUID playerId = player.getUniqueId();
         
         // Cancel any existing countdown task
@@ -217,7 +212,7 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
 
                 long currentTime = System.currentTimeMillis();
                 long comboStart = comboCountdowns.get(playerId);
-                long remainingTime = 5000 - (currentTime - comboStart);
+                long remainingTime = getTierComboDuration(tier)*1000L - (currentTime - comboStart);
 
                 if (remainingTime <= 0) {
                     cancelComboCountdown(player);
@@ -341,7 +336,8 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
 
     private Location findSafeLocationNextToEntity(Location mobLocation, Player player) {
         // Possible offset directions
-        int[][] offsets = {{1,0,0}, {-1,0,0}, {0,0,1}, {0,0,-1}, {0,1,0}}; // also checking for y+1 f.e. for mobs on slabs or spiders
+        int[][] offsets = {{1,0,0}, {-1,0,0}, {0,0,1}, {0,0,-1}, {0,1,0}, {1, 1, 0}, {-1, 1, 0}, {0, 1, 1}, {0, 1, -1}, {-1, 1, -1}, {-1, 1, 1}, {1, 1, 1}, {1, 1, -1},
+                            {0,-1,0}, {1, -1, 0}, {-1, -1, 0}, {0, -1, 1}, {0, -1, -1}, {1, -1, 1}, {1, -1, -1}, {-1, -1, 1}, {-1, -1, -1}};  // also checking for y+1 and y-1 f.e. for mobs on slabs or spiders
 
         for (int[] offset : offsets) {
             Location potentialLocation = mobLocation.clone().add(offset[0], offset[1], offset[2]);
@@ -395,7 +391,7 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
         switch (messageType.toLowerCase()) {
             case "hotbar":
                 player.spigot().sendMessage(net.md_5.bungee.api.ChatMessageType.ACTION_BAR, 
-                    new net.md_5.bungee.api.chat.TextComponent(message));
+                   new net.md_5.bungee.api.chat.TextComponent(message));
                 break;
             case "title":
                 player.sendTitle("", message, 10, 70, 20);
@@ -404,14 +400,6 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
                 player.sendMessage(message);
                 break;
         }
-    }
-
-    private List<String> getTierPermissions(int tier) {
-        List<String> permissions = new ArrayList<>();
-        for (int i = 1; i <= tier; i++) {
-            permissions.addAll(tiers.getStringList("tier " + i + ".permissions"));
-        }
-        return permissions;
     }
 
     private void applyEffects(Player player, int tier) {
@@ -442,6 +430,24 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
         long tierCooldown = tiers.getLong("tier " + tier + ".cooldown", 0);
 
         return tierCooldown;
+    }
+
+    private long getTierComboDuration(int tier) {
+        long tierComboDuration = tiers.getLong("tier " + tier + ".combo_duration", 0);
+
+        return tierComboDuration;
+    }
+
+    private long getTierMaxTeleportDistance(int tier) {
+        long tierMaxTeleportDistance = tiers.getLong("tier " + tier + ".max_teleport_distance", 0);
+
+        return tierMaxTeleportDistance;
+    }
+ 
+    private boolean getTierDamageBreaksCombo(int tier) {
+        boolean damageBreaksCombo = tiers.getBoolean("tier " + tier + ".damage_breaks_combo", true);
+
+        return damageBreaksCombo;
     }
 
     private void createLangFile() {
@@ -478,18 +484,96 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
             try {
                 tiersFile.createNewFile();
                 FileConfiguration tiersConfig = YamlConfiguration.loadConfiguration(tiersFile);
-                tiersConfig.set("tier 1.permissions", Arrays.asList("canSprintStrikeFiveBlocks"));
-                tiersConfig.set("tier 1.effects", Arrays.asList("strength,2,2"));
-                tiersConfig.set("tier 1.cooldown", 10);
-                tiersConfig.set("tier 2.permissions", Arrays.asList("canSprintStrikeFiveBlocks"));
-                tiersConfig.set("tier 2.effects", Arrays.asList("strength,4,2"));
-                tiersConfig.set("tier 2.cooldown", 8);
+                
+                // Tier 1
+                tiersConfig.set("tier 1.effects", Arrays.asList(
+                    "strength,2,2" // effect: strength, level: 2, duration: 2 seconds
+                ));
+                tiersConfig.set("tier 1.combo_duration", 3); // Combo duration in seconds
+                tiersConfig.set("tier 1.max_teleport_distance", 5); // Max teleport distance in blocks
+                tiersConfig.set("tier 1.cooldown", 60); // Cooldown in seconds
+                tiersConfig.set("tier 1.damage_breaks_combo", true); // Whether taking damage breaks the combo
+    
+                // Tier 2
+                tiersConfig.set("tier 2.effects", Arrays.asList(
+                    "strength,4,2", // effect: strength, level: 4, duration: 2 seconds
+                    "speed,1,3"     // effect: speed, level: 1, duration: 3 seconds
+                ));
+                tiersConfig.set("tier 2.combo_duration", 3.5); // Combo duration in seconds
+                tiersConfig.set("tier 2.max_teleport_distance", 10); // Max teleport distance in blocks
+                tiersConfig.set("tier 2.cooldown", 45); // Cooldown in seconds
+                tiersConfig.set("tier 2.damage_breaks_combo", true); // Whether taking damage breaks the combo
+    
+                // Tier 3
+                tiersConfig.set("tier 3.effects", Arrays.asList(
+                    "strength,6,4", // effect: strength, level: 6, duration: 4 seconds
+                    "speed,2,4"     // effect: speed, level: 2, duration: 4 seconds
+                ));
+                tiersConfig.set("tier 3.combo_duration", 4); // Combo duration in seconds
+                tiersConfig.set("tier 3.max_teleport_distance", 15); // Max teleport distance in blocks
+                tiersConfig.set("tier 3.cooldown", 30); // Cooldown in seconds
+                tiersConfig.set("tier 3.damage_breaks_combo", true); // Whether taking damage breaks the combo
+    
+                // Tier 4
+                tiersConfig.set("tier 4.effects", Arrays.asList(
+                    "strength,8,4",      // effect: strength, level: 8, duration: 4 seconds
+                    "speed,3,4",         // effect: speed, level: 3, duration: 4 seconds
+                    "regeneration,2,4"   // effect: regeneration, level: 2, duration: 4 seconds
+                ));
+                tiersConfig.set("tier 4.combo_duration", 4.5); // Combo duration in seconds
+                tiersConfig.set("tier 4.max_teleport_distance", 15); // Max teleport distance in blocks
+                tiersConfig.set("tier 4.cooldown", 15); // Cooldown in seconds
+                tiersConfig.set("tier 4.damage_breaks_combo", true); // Whether taking damage breaks the combo
+    
+                // Tier 5
+                tiersConfig.set("tier 5.effects", Arrays.asList(
+                    "strength,8,6",      // effect: strength, level: 8, duration: 6 seconds
+                    "speed,3,5",         // effect: speed, level: 3, duration: 5 seconds
+                    "regeneration,2,5",  // effect: regeneration, level: 2, duration: 5 seconds
+                    "fire_resistance,1,5"// effect: fire_resistance, level: 1, duration: 5 seconds
+                ));
+                tiersConfig.set("tier 5.combo_duration", 5); // Combo duration in seconds
+                tiersConfig.set("tier 5.max_teleport_distance", 20); // Max teleport distance in blocks
+                tiersConfig.set("tier 5.cooldown", 15); // Cooldown in seconds
+                tiersConfig.set("tier 5.damage_breaks_combo", true); // Whether taking damage breaks the combo
+    
+                // Tier 6
+                tiersConfig.set("tier 6.effects", Arrays.asList(
+                    "strength,8,6",      // effect: strength, level: 8, duration: 6 seconds
+                    "speed,3,5",         // effect: speed, level: 3, duration: 5 seconds
+                    "regeneration,2,5",  // effect: regeneration, level: 2, duration: 5 seconds
+                    "resistance,1,5",    // effect: resistance, level: 1, duration: 5 seconds
+                    "fire_resistance,1,5",// effect: fire_resistance, level: 1, duration: 5 seconds
+                    "invisibility,1,1"   // effect: invisibility, level: 1, duration: 1 second
+                ));
+                tiersConfig.set("tier 6.combo_duration", 5); // Combo duration in seconds
+                tiersConfig.set("tier 6.max_teleport_distance", 20); // Max teleport distance in blocks
+                tiersConfig.set("tier 6.cooldown", 10); // Cooldown in seconds
+                tiersConfig.set("tier 6.damage_breaks_combo", true); // Whether taking damage breaks the combo
+    
+                // Tier 7
+                tiersConfig.set("tier 7.effects", Arrays.asList(
+                    "strength,9,6",      // effect: strength, level: 9, duration: 6 seconds
+                    "speed,3,5",         // effect: speed, level: 3, duration: 5 seconds
+                    "regeneration,2,5",  // effect: regeneration, level: 2, duration: 5 seconds
+                    "resistance,1,5",    // effect: resistance, level: 1, duration: 5 seconds
+                    "fire_resistance,1,5",// effect: fire_resistance, level: 1, duration: 5 seconds
+                    "invisibility,1,2"   // effect: invisibility, level: 1, duration: 2 seconds
+                ));
+                tiersConfig.set("tier 7.combo_duration", 6); // Combo duration in seconds
+                tiersConfig.set("tier 7.max_teleport_distance", 20); // Max teleport distance in blocks
+                tiersConfig.set("tier 7.cooldown", 5); // Cooldown in seconds
+                tiersConfig.set("tier 7.damage_breaks_combo", true); // Whether taking damage breaks the combo
+    
+                // Save the config file
                 tiersConfig.save(tiersFile);
+    
             } catch (IOException e) {
                 getLogger().severe("Could not create tiers.yml file.");
             }
         }
     }
+    
 
     
     private void createPlayerDataFile() {

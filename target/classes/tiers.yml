@@ -1,41 +1,72 @@
 tier 1:
-  permissions:
-    - canSprintStrikeFiveBlocks
   effects:
     - strength,2,2 # effect: strength, level: 2, duration: 2 seconds
-  cooldown: 10 # cooldown in seconds
+  combo_duration: 3 # time in seconds the combo is active
+  max_teleport_distance: 5 # reach in blocks (how far a player can teleport)
+  cooldown: 60 # cooldown in seconds
+  damage_breaks_combo: true # whether taking damage breaks the combo
 
 tier 2:
-  permissions:
-    - canSprintStrikeTenBlocks
   effects:
     - strength,4,2
     - speed,1,3 # effect: speed, level: 1, duration: 3 seconds
-  cooldown: 8
+  combo_duration: 3.5
+  max_teleport_distance: 10
+  cooldown: 45
+  damage_breaks_combo: true
 
 tier 3:
-  permissions:
-    - canSprintStrikeFifteenBlocks
   effects:
     - strength,6,4
-    - speed,2,5
-    - regeneration,1,5
-  cooldown: 6
+    - speed,2,4
+  combo_duration: 4
+  max_teleport_distance: 15
+  cooldown: 30
+  damage_breaks_combo: true
 
 tier 4:
-  permissions:
-    - canSprintStrikeTwentyBlocks
   effects:
-    - strength,8,6
-    - speed,3,5
-    - regeneration,2,5
-  cooldown: 4
+    - strength,8,4
+    - speed,3,4
+    - regeneration,2,4
+  combo_duration: 4.5
+  max_teleport_distance: 15
+  cooldown: 15
+  damage_breaks_combo: true
 
 tier 5:
-  permissions:
-    - canSprintStrikeTwentyBlocks
   effects:
     - strength,8,6
     - speed,3,5
     - regeneration,2,5
-  cooldown: 1
+    - fire_resistance,1,5
+  combo_duration: 5
+  max_teleport_distance: 20
+  cooldown: 15
+  damage_breaks_combo: true
+
+tier 6:
+  effects:
+    - strength,8,6
+    - speed,3,5
+    - regeneration,2,5
+    - resistance,1,5
+    - fire_resistance,1,5
+    - invisibility,1,1
+  combo_duration: 5
+  max_teleport_distance: 20
+  cooldown: 10
+  damage_breaks_combo: true
+
+tier 7:
+  effects:
+    - strength,9,6
+    - speed,3,5
+    - regeneration,2,5
+    - resistance,1,5
+    - fire_resistance,1,5
+    - invisibility,1,2
+  combo_duration: 6
+  max_teleport_distance: 20
+  cooldown: 5
+  damage_breaks_combo: true
