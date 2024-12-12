@@ -7,7 +7,6 @@ tier 1:
 
 tier 2:
   permissions:
-    - canSprintStrikeFiveBlocks
     - canSprintStrikeTenBlocks
   effects:
     - strength,4,2
@@ -16,8 +15,6 @@ tier 2:
 
 tier 3:
   permissions:
-    - canSprintStrikeFiveBlocks
-    - canSprintStrikeTenBlocks
     - canSprintStrikeFifteenBlocks
   effects:
     - strength,6,4
@@ -27,12 +24,18 @@ tier 3:
 
 tier 4:
   permissions:
-    - canSprintStrikeFiveBlocks
-    - canSprintStrikeTenBlocks
-    - canSprintStrikeFifteenBlocks
     - canSprintStrikeTwentyBlocks
   effects:
     - strength,8,6
     - speed,3,5
     - regeneration,2,5
   cooldown: 4
+
+tier 5:
+  permissions:
+    - canSprintStrikeTwentyBlocks
+  effects:
+    - strength,8,6
+    - speed,3,5
+    - regeneration,2,5
+  cooldown: 1

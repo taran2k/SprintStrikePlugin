@@ -5,8 +5,9 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.entity.Animals;
 import org.bukkit.entity.Entity;
-import org.bukkit.entity.EntityType;
+import org.bukkit.entity.Monster;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -14,6 +15,7 @@ import org.bukkit.event.player.PlayerToggleSneakEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
+import org.bukkit.util.Vector;
 
 import java.io.File;
 import java.io.IOException;
@@ -24,6 +26,8 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
     private FileConfiguration lang;
     private FileConfiguration config;
     private FileConfiguration tiers;
+    private FileConfiguration playerData;
+    private File playerDataFile;
 
     private final Map<UUID, Integer> playerTiers = new HashMap<>();
     private final Map<UUID, Long> cooldowns = new HashMap<>();
@@ -32,6 +36,19 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
     public void onEnable() {
         // Register events
         Bukkit.getPluginManager().registerEvents(this, this);
+
+        // Load configuration files
+        saveDefaultConfig();
+        createLangFile();
+        createTiersFile();
+        createPlayerDataFile();
+
+        config = getConfig();
+        lang = YamlConfiguration.loadConfiguration(new File(getDataFolder(), "lang.yml"));
+        tiers = YamlConfiguration.loadConfiguration(new File(getDataFolder(), "tiers.yml"));
+        
+        // Load existing player tiers from playerdata.yml
+        loadPlayerTiers();
 
         // Register commands
         this.getCommand("sprintstrike").setExecutor((sender, command, label, args) -> {
@@ -49,8 +66,18 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
                 int level = Integer.parseInt(args[1]);
                 Player target = args.length > 2 ? Bukkit.getPlayer(args[2]) : (Player) sender;
 
+                if (level < 1) {
+                    sender.sendMessage("Level must be greater than 0.");
+                    return true;
+                }
+
+                if (level > tiers.getKeys(false).size()) {
+                    sender.sendMessage("There is no such tier!");
+                    return true;
+                }
+
                 if (target != null) {
-                    playerTiers.put(target.getUniqueId(), level);
+                    setPlayerTier(target.getUniqueId(), level);
                     sender.sendMessage("Set sprint strike tier to " + level + " for " + target.getName() + ".");
                 } else {
                     sender.sendMessage("Player not found.");
@@ -60,15 +87,6 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
             }
             return true;
         });
-
-        // Load configuration files
-        saveDefaultConfig();
-        createLangFile();
-        createTiersFile();
-
-        config = getConfig();
-        lang = YamlConfiguration.loadConfiguration(new File(getDataFolder(), "lang.yml"));
-        tiers = YamlConfiguration.loadConfiguration(new File(getDataFolder(), "tiers.yml"));
     }
 
     @EventHandler
@@ -97,38 +115,67 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
             (distance <= 10 && permissions.contains("canSprintStrikeTenBlocks")) ||
             (distance <= 15 && permissions.contains("canSprintStrikeFifteenBlocks")) ||
             (distance <= 20 && permissions.contains("canSprintStrikeTwentyBlocks"))) {
-            sprintStrike(player, target, tier);
-            cooldowns.put(playerId, currentTime); // Set cooldown
+            if (sprintStrike(player, target, tier)) {
+                cooldowns.put(playerId, currentTime); // Set cooldown only if sprintStrike was succesful
+            };
         }
     }
 
     private Entity getTargetEntity(Player player, int maxDistance) {
+        // Get the player's eye location and looking direction
+        Location eyeLocation = player.getEyeLocation();
+        Vector eyeDirection = eyeLocation.getDirection().normalize();
+    
+        Entity closestEntity = null;
+        double closestDistance = Double.MAX_VALUE;
+        
+    
+        // Iterate through nearby entities
         for (Entity entity : player.getNearbyEntities(maxDistance, maxDistance, maxDistance)) {
-            if (entity.getType() != EntityType.PLAYER && player.hasLineOfSight(entity)) {
-                return entity;
+            // Filter for only living entities that are not players
+            if (!(entity instanceof Animals) && !(entity instanceof Monster)) {
+                continue;
+            }
+    
+            // Get the entity's center location
+            Location entityLocation = entity.getLocation().add(0, entity.getHeight() / 2, 0);
+    
+            // Calculate the vector from eye to entity
+            Vector toEntity = entityLocation.toVector().subtract(eyeLocation.toVector());
+    
+            // Calculate the distance of the entity from the line of sight
+            double distanceFromSight = toEntity.getCrossProduct(eyeDirection).length() / eyeDirection.length();
+    
+            // Check if the entity is close to the line of sight (within 1 block)
+            if (distanceFromSight <= 1.0 && player.hasLineOfSight(entity)) {
+                double distance = eyeLocation.distance(entityLocation);
+                
+                // Find the closest entity to the line of sight
+                if (distance < closestDistance) {
+                    closestEntity = entity;
+                    closestDistance = distance;
+                }
             }
         }
-        return null;
+    
+        return closestEntity;
     }
+    
 
-    private void sprintStrike(Player player, Entity target, int tier) {
+    private boolean sprintStrike(Player player, Entity target, int tier) {
         Location mobLocation = target.getLocation();
-
-        if (mobLocation.getBlock().getType() == Material.AIR) {
-            sendMessage(player, "ErrorMobInAir");
-            return;
-        }
 
         Location safeLocation = findSafeLocationNear(mobLocation, player);
         if (safeLocation == null) {
             sendMessage(player, "ErrorNoSpace");
-            return;
+            return false;
         }
 
         player.teleport(safeLocation);
         player.setRotation(mobLocation.getYaw(), mobLocation.getPitch());
 
         applyEffects(player, tier);
+        return true;
     }
 
     private Location findSafeLocationNear(Location mobLocation, Player player) {
@@ -206,12 +253,9 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
     }
 
     private long getTierCooldown(int tier) {
-        long highestCooldown = 0;
-        for (int i = 1; i <= tier; i++) {
-            long tierCooldown = tiers.getLong("tier " + i + ".cooldown", 0);
-            highestCooldown = Math.max(highestCooldown, tierCooldown);
-        }
-        return highestCooldown;
+        long tierCooldown = tiers.getLong("tier " + tier + ".cooldown", 0);
+
+        return tierCooldown;
     }
 
     private void createLangFile() {
@@ -246,6 +290,46 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
             } catch (IOException e) {
                 getLogger().severe("Could not create tiers.yml file.");
             }
+        }
+    }
+
+    
+    private void createPlayerDataFile() {
+        playerDataFile = new File(getDataFolder(), "playerdata.yml");
+        if (!playerDataFile.exists()) {
+            try {
+                playerDataFile.createNewFile();
+            } catch (IOException e) {
+                getLogger().severe("Could not create playerdata.yml file.");
+            }
+        }
+        playerData = YamlConfiguration.loadConfiguration(playerDataFile);
+    }
+
+    private void loadPlayerTiers() {
+        playerTiers.clear();
+        for (String uuidString : playerData.getKeys(false)) {
+            try {
+                UUID uuid = UUID.fromString(uuidString);
+                int tier = playerData.getInt(uuidString, 0);
+                if (tier > 0) {
+                    playerTiers.put(uuid, tier);
+                }
+            } catch (IllegalArgumentException e) {
+                getLogger().warning("Invalid UUID in playerdata.yml: " + uuidString);
+            }
+        }
+    }
+
+    private void setPlayerTier(UUID uuid, int tier) {
+        playerTiers.put(uuid, tier);
+        
+        // Save to playerdata.yml
+        playerData.set(uuid.toString(), tier);
+        try {
+            playerData.save(playerDataFile);
+        } catch (IOException e) {
+            getLogger().severe("Could not save player tier to playerdata.yml");
         }
     }
 }

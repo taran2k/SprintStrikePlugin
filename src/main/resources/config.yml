@@ -1,1 +1,1 @@
-messageType: "chat" # Options: "chat", "hotbar", "title"
+messageType: "hotbar" # Options: "chat", "hotbar", "title"
