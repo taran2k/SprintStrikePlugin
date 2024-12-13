@@ -72,7 +72,6 @@ Contributions are welcome! Please:
 
 ## Support
 - Open an issue on the GitHub repository for bugs or feature requests
-- Join our Discord server for community support
 
 ## Credits
 Developed by [taran2k](https://github.com/taran2k/).
