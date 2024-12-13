@@ -4,6 +4,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Sound;
+import org.bukkit.block.Block;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Animals;
@@ -335,26 +336,38 @@ public class SprintStrikePlugin extends JavaPlugin implements Listener {
     }
 
     private Location findSafeLocationNextToEntity(Location mobLocation, Player player) {
-        // Possible offset directions
-        int[][] offsets = {{1,0,0}, {-1,0,0}, {0,0,1}, {0,0,-1}, {0,1,0}, {1, 1, 0}, {-1, 1, 0}, {0, 1, 1}, {0, 1, -1}, {-1, 1, -1}, {-1, 1, 1}, {1, 1, 1}, {1, 1, -1},
-                            {0,-1,0}, {1, -1, 0}, {-1, -1, 0}, {0, -1, 1}, {0, -1, -1}, {1, -1, 1}, {1, -1, -1}, {-1, -1, 1}, {-1, -1, -1}};  // also checking for y+1 and y-1 f.e. for mobs on slabs or spiders
+        int[][] offsets = {
+            {1,0,0}, {-1,0,0}, {0,0,1}, {0,0,-1}, 
+            {1,0,1}, {-1,0,1}, {1,0,-1}, {-1,0,-1},
+            // Additional offsets for larger mobs like spiders and horses
+            {2,0,0}, {-2,0,0}, {0,0,2}, {0,0,-2},
+        };
 
         for (int[] offset : offsets) {
             Location potentialLocation = mobLocation.clone().add(offset[0], offset[1], offset[2]);
             
-            // Find safe y-level
-            while (potentialLocation.getBlockY() > 0 && potentialLocation.getBlock().getType() == Material.AIR) {
-                potentialLocation.subtract(0, 1, 0);
-            }
-            potentialLocation.add(0, 1, 0);
-
-            // Check if location is safe (air block, no entities)
-            if (potentialLocation.getBlock().getType() == Material.AIR && 
-                player.getWorld().getNearbyEntities(potentialLocation, 0.5, 0.5, 0.5).isEmpty()) {
+            // Check if the location is safe
+            if (isSafeLocation(potentialLocation, player)) {
                 return potentialLocation;
             }
         }
         return null;
+    }
+
+    private boolean isSafeLocation(Location location, Player player) {
+        // Comprehensive safety checks
+        Block block = location.getBlock();
+        Block blockBelow = location.clone().subtract(0, 1, 0).getBlock();
+        Block blockAbove = location.clone().add(0, 1, 0).getBlock();
+
+        // Check if the location provides enough space for different mob types
+        // This handles variations like spiders (wider than 1 block), horses, and other entities
+        return (blockBelow.getType().isSolid() && // Solid ground
+                block.getType() == Material.AIR && // Current block is air
+                blockAbove.getType() == Material.AIR && // Block above is air
+                player.getWorld().getNearbyEntities(location, 0.5, 0.5, 0.5).isEmpty() && // Should be some space between location and entities
+                !block.isLiquid() && // Not in liquid
+                location.getBlockY() > 0 && location.getBlockY() < location.getWorld().getMaxHeight()); // Within world bounds
     }
 
     private String formatMessage(String key, String... replacements) {

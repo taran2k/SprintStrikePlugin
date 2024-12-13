@@ -65,7 +65,7 @@ tier 7:
     - regeneration,2,5
     - resistance,1,5
     - fire_resistance,1,5
-    - invisibility,1,2
+    - invisibility,1,3
   combo_duration: 6
   max_teleport_distance: 20
   cooldown: 5
